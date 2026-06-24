@@ -58,6 +58,14 @@ def _tb_headers():
 
 WEEK_PROGRAM_KEYWORDS = ('4-week', '4 week', '8-week', '8 week')
 
+# Dates on which no classes run — never return these as makeup options.
+BLACKOUT_DATES = {
+    (2026, 7, 3),
+    (2026, 7, 4),
+    (2026, 7, 5),
+    (2026, 7, 6),
+}
+
 TIMEZONE_MAP = {
     'Eastern Standard Time': 'America/New_York',
     'Eastern Daylight Time': 'America/New_York',
@@ -311,6 +319,8 @@ def find_makeup_options(
             continue
 
         if cand_dt < win_start or cand_dt > win_end:
+            continue
+        if (cand_dt.year, cand_dt.month, cand_dt.day) in BLACKOUT_DATES:
             continue
 
         enrolled = candidate.get('CurrentNumberAttending', 0)
