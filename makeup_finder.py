@@ -278,7 +278,6 @@ def find_makeup_options(
     now        = datetime.now()
     lesson_dt  = parse_dt(selected_event.get('StartDate', ''))
     win_start  = max(now, lesson_dt - timedelta(days=5))
-    win_end    = lesson_dt + timedelta(weeks=2)
     sel_id  = selected_event.get('ID')
     sel_key = series_key(selected_event)
 
@@ -301,6 +300,18 @@ def find_makeup_options(
     )
     if lesson_number is None:
         return []
+
+    # win_end: day before the student's next scheduled lesson so makeups
+    # don't bleed into the following week. Fall back to 2 weeks if this
+    # is the last lesson in the series.
+    if lesson_number < len(own_series):
+        try:
+            next_lesson_dt = parse_dt(own_series[lesson_number].get('StartDate', ''))
+            win_end = next_lesson_dt - timedelta(days=1)
+        except Exception:
+            win_end = lesson_dt + timedelta(weeks=2)
+    else:
+        win_end = lesson_dt + timedelta(weeks=2)
 
     options = []
     for key, series in series_map.items():
