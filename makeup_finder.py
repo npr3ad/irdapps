@@ -46,7 +46,7 @@ def _secret(key: str) -> str:
 TB_BASE = 'https://api.tutorbird.com/v1'
 
 def _tb_headers():
-    token = _secret('TB_TOKEN')
+    token = _secret('TB_API_KEY')
     return {
         'Authorization': f'Bearer {token}',
         'Accept': 'application/json',
@@ -56,7 +56,7 @@ def _tb_headers():
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-WEEK_PROGRAM_KEYWORDS = ('4-week', '4 week', '8-week', '8 week')
+SUPPORTED_PROGRAM_KEYWORDS = ('4-week', '4 week', '8-week', '8 week', 'small-group tutoring', '1:1 tutoring')
 
 # Dates on which no classes run — never return these as makeup options.
 BLACKOUT_DATES = {
@@ -143,9 +143,9 @@ def parse_dt(dt_str: str) -> datetime:
     return datetime.strptime(dt_str[:19], '%Y-%m-%dT%H:%M:%S')
 
 
-def is_week_program(name: str) -> bool:
+def is_supported_program(name: str) -> bool:
     n = (name or '').lower()
-    return any(kw in n for kw in WEEK_PROGRAM_KEYWORDS)
+    return any(kw in n for kw in SUPPORTED_PROGRAM_KEYWORDS)
 
 
 def program_length(category_name: str) -> int | None:
@@ -229,12 +229,12 @@ def load_student_index() -> dict:
 
 
 @st.cache_data(ttl=7200, show_spinner='Loading program categories…')
-def load_week_category_ids() -> dict:
-    """Returns {id: name} for all 4-week and 8-week program categories."""
+def load_supported_category_ids() -> dict:
+    """Returns {id: name} for all supported program categories."""
     r = requests.get(f'{TB_BASE}/eventcategories', headers=_tb_headers(), timeout=30)
     r.raise_for_status()
     cats = r.json().get('ItemSubset', [])
-    return {c['ID']: c['Name'] for c in cats if is_week_program(c.get('Name', ''))}
+    return {c['ID']: c['Name'] for c in cats if is_supported_program(c.get('Name', ''))}
 
 
 def fetch_student_future_lessons(student_id: str, cat_ids: list) -> list:
@@ -362,7 +362,7 @@ st.title('📅 Make-Up Lesson Finder')
 if not _check_password():
     st.stop()
 
-st.caption('Find available make-up options for a student in a 4-week or 8-week program.')
+st.caption('Find available make-up options for a student in a 4-week, 8-week, Small-Group Tutoring, or 1:1 Tutoring program.')
 
 # ── Step 1: Email lookup ──────────────────────────────────────────────────────
 with st.form('email_form'):
@@ -401,12 +401,12 @@ if 'students' in st.session_state:
             st.session_state.pop(key, None)
 
         with st.spinner('Fetching enrolled lessons…'):
-            cat_ids = list(load_week_category_ids().keys())
+            cat_ids = list(load_supported_category_ids().keys())
             events  = fetch_student_future_lessons(student['id'], cat_ids)
 
         events = cap_to_program_length(events)
         if not events:
-            st.warning(f'{sel_name} has no upcoming 4-week or 8-week program sessions.')
+            st.warning(f'{sel_name} has no upcoming supported program sessions.')
         else:
             st.session_state['lessons']           = events
             st.session_state['student_event_ids'] = {ev.get('ID') for ev in events}
