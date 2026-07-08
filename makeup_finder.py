@@ -258,6 +258,17 @@ def load_supported_category_ids() -> dict:
     return {c['ID']: c['Name'] for c in cats if is_supported_program(c.get('Name', ''))}
 
 
+def fetch_student_tz(student_id: str) -> str:
+    """Fetch timezone for one student via individual record (API-key compatible)."""
+    try:
+        r = requests.get(f'{TB_BASE}/students/{student_id}', headers=_tb_headers(),
+                         params={'fields': 'Family'}, timeout=30)
+        r.raise_for_status()
+        return (r.json().get('Family') or {}).get('TimeZoneID', '')
+    except Exception:
+        return ''
+
+
 def fetch_student_future_lessons(student_id: str, cat_ids: list) -> list:
     """Return future 4/8-week events the student is enrolled in, sorted by date."""
     today    = datetime.now().strftime('%Y-%m-%dT00:00:00')
@@ -413,17 +424,18 @@ if 'students' in st.session_state:
     student_names = [s['name'] for s in students]
     sel_name      = st.selectbox('Student', student_names, key='student_select')
     student       = next(s for s in students if s['name'] == sel_name)
-    tz_raw        = student.get('tz_raw', '')
+    tz_raw        = st.session_state.get('tz_raw', '') or student.get('tz_raw', '')
 
-    st.info(f'**Family timezone:** {tz_raw or "Unknown"}')
+    st.info(f'**Family timezone:** {tz_raw or "Unknown (click Load Lessons)"}')
 
     if st.button('Load Lessons', key='load_lessons'):
         for key in ('lessons', 'student_event_ids', 'options'):
             st.session_state.pop(key, None)
 
         with st.spinner('Fetching enrolled lessons…'):
-            cat_ids = list(load_supported_category_ids().keys())
-            events  = fetch_student_future_lessons(student['id'], cat_ids)
+            cat_ids  = list(load_supported_category_ids().keys())
+            events   = fetch_student_future_lessons(student['id'], cat_ids)
+            tz_fetched = fetch_student_tz(student['id'])
 
         events = cap_to_program_length(events)
         if not events:
@@ -431,7 +443,7 @@ if 'students' in st.session_state:
         else:
             st.session_state['lessons']           = events
             st.session_state['student_event_ids'] = {ev.get('ID') for ev in events}
-            st.session_state['tz_raw']            = tz_raw
+            st.session_state['tz_raw']            = tz_fetched or tz_raw
 
 # ── Step 3: Lesson selection → makeup search ──────────────────────────────────
 if 'lessons' in st.session_state:
