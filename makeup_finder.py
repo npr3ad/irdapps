@@ -261,10 +261,11 @@ def load_supported_category_ids() -> dict:
 def fetch_student_tz(student_id: str) -> str:
     """Fetch timezone for one student via individual record (API-key compatible)."""
     try:
-        r = requests.get(f'{TB_BASE}/students/{student_id}', headers=_tb_headers(),
-                         params={'fields': 'Family'}, timeout=30)
+        r = requests.get(f'{TB_BASE}/students/{student_id}', headers=_tb_headers(), timeout=30)
         r.raise_for_status()
-        return (r.json().get('Family') or {}).get('TimeZoneID', '')
+        rec = r.json()
+        return (rec.get('TimeZoneID') or
+                (rec.get('Family') or {}).get('TimeZoneID') or '')
     except Exception:
         return ''
 
