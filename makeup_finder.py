@@ -213,9 +213,8 @@ def load_student_index() -> dict:
         name  = s.get('FullName') or (
             f"{s.get('FirstName', '')} {s.get('LastName', '')}".strip()
         )
-        tz_raw = s.get('TimeZoneID', '') or (s.get('Family') or {}).get('TimeZoneID', '')
         fid    = s.get('FamilyID', '')
-        student_map[sid] = {'id': sid, 'name': name, 'tz_raw': tz_raw}
+        student_map[sid] = {'id': sid, 'name': name, 'tz_raw': '', 'family_id': fid}
         if fid:
             family_to_sids[fid].append(sid)
 
@@ -258,14 +257,14 @@ def load_supported_category_ids() -> dict:
     return {c['ID']: c['Name'] for c in cats if is_supported_program(c.get('Name', ''))}
 
 
-def fetch_student_tz(student_id: str) -> str:
-    """Fetch timezone for one student via individual record (API-key compatible)."""
+def fetch_family_tz(family_id: str) -> str:
+    """Fetch timezone from the family record."""
+    if not family_id:
+        return ''
     try:
-        r = requests.get(f'{TB_BASE}/students/{student_id}', headers=_tb_headers(), timeout=30)
+        r = requests.get(f'{TB_BASE}/families/{family_id}', headers=_tb_headers(), timeout=30)
         r.raise_for_status()
-        rec = r.json()
-        return (rec.get('TimeZoneID') or
-                (rec.get('Family') or {}).get('TimeZoneID') or '')
+        return r.json().get('TimeZoneID', '')
     except Exception:
         return ''
 
@@ -436,7 +435,7 @@ if 'students' in st.session_state:
         with st.spinner('Fetching enrolled lessons…'):
             cat_ids  = list(load_supported_category_ids().keys())
             events   = fetch_student_future_lessons(student['id'], cat_ids)
-            tz_fetched = fetch_student_tz(student['id'])
+            tz_fetched = fetch_family_tz(student.get('family_id', ''))
 
         events = cap_to_program_length(events)
         if not events:
