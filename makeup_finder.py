@@ -196,34 +196,55 @@ def series_key(ev: dict) -> tuple:
 def load_student_index() -> dict:
     """
     Returns: email (lowercase) → list of {id, name, tz_raw}
-    Indexed by both student email and parent emails from Family record.
+    Indexed by both student email and parent emails.
+    Uses POST /search/students + POST /search/parents (API-key compatible).
     Cached 2 hours.
     """
-    r = requests.get(f'{TB_BASE}/students', headers=_tb_headers(),
-                     params={'fields': 'Family'}, timeout=120)
-    r.raise_for_status()
-    raw = r.json()
-    students = raw if isinstance(raw, list) else raw.get('ItemSubset', [])
+    # Step 1: all students
+    rs = requests.post(f'{TB_BASE}/search/students', headers=_tb_headers(),
+                       json={}, timeout=120)
+    rs.raise_for_status()
+    students = rs.json().get('ItemSubset', [])
 
-    index = defaultdict(list)
+    student_map = {}               # sid → entry dict
+    family_to_sids = defaultdict(list)  # fid → [sid, ...]
     for s in students:
-        sid    = s.get('ID', '')
-        name   = s.get('FullName') or (
+        sid   = s.get('ID', '')
+        name  = s.get('FullName') or (
             f"{s.get('FirstName', '')} {s.get('LastName', '')}".strip()
         )
-        family = s.get('Family') or {}
-        tz_raw = family.get('TimeZoneID', '')
-        entry  = {'id': sid, 'name': name, 'tz_raw': tz_raw}
+        tz_raw = s.get('TimeZoneID', '') or (s.get('Family') or {}).get('TimeZoneID', '')
+        fid    = s.get('FamilyID', '')
+        student_map[sid] = {'id': sid, 'name': name, 'tz_raw': tz_raw}
+        if fid:
+            family_to_sids[fid].append(sid)
 
+    # Step 2: all parents for email → student mapping
+    rp = requests.post(f'{TB_BASE}/search/parents', headers=_tb_headers(),
+                       json={}, timeout=120)
+    rp.raise_for_status()
+    parents = rp.json().get('ItemSubset', [])
+
+    index = defaultdict(list)
+    for p in parents:
+        p_email = extract_email(p.get('Email'))
+        fid     = p.get('FamilyID', '')
+        if not p_email or not fid:
+            continue
+        for sid in family_to_sids.get(fid, []):
+            if sid in student_map:
+                entry = student_map[sid]
+                if not any(e['id'] == sid for e in index[p_email]):
+                    index[p_email].append(entry)
+
+    # Step 3: also index by each student's own email
+    for s in students:
+        sid     = s.get('ID', '')
         s_email = extract_email(s.get('Email'))
-        if s_email:
+        if s_email and sid in student_map:
+            entry = student_map[sid]
             if not any(e['id'] == sid for e in index[s_email]):
                 index[s_email].append(entry)
-
-        for parent in (family.get('Parents') or []):
-            p_email = extract_email(parent.get('Email'))
-            if p_email and not any(e['id'] == sid for e in index[p_email]):
-                index[p_email].append(entry)
 
     return dict(index)
 
