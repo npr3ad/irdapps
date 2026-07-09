@@ -307,79 +307,60 @@ def find_makeup_options(
     student_event_ids: set,
     all_category_events: list,
 ) -> list:
-    now        = datetime.now()
-    lesson_dt  = parse_dt(selected_event.get('StartDate', ''))
-    win_start  = max(now, lesson_dt - timedelta(days=5))
-    sel_id  = selected_event.get('ID')
-    sel_key = series_key(selected_event)
+    now       = datetime.now()
+    lesson_dt = parse_dt(selected_event.get('StartDate', ''))
+    win_start = max(now, lesson_dt - timedelta(days=5))
+    sel_id    = selected_event.get('ID')
+    sel_key   = series_key(selected_event)
 
     if not sel_key:
         return []
 
-    series_map = defaultdict(list)
-    for ev in all_category_events:
-        k = series_key(ev)
-        if k:
-            series_map[k].append(ev)
+    # win_end = end of Friday of the Sat–Fri instructional week that contains
+    # lesson_dt.  e.g. lesson Mon 7/13 → week Sat 7/11–Fri 7/17 → win_end Fri 7/17 23:59.
+    # This prevents makeups from bleeding into the following instructional week
+    # (e.g. Sat 7/18 would be the first day of the next week).
+    days_since_sat = (lesson_dt.weekday() - 5) % 7   # 0 on Sat, 1 on Sun, 2 on Mon …
+    week_sat = lesson_dt.replace(hour=0, minute=0, second=0) - timedelta(days=days_since_sat)
+    win_end  = week_sat + timedelta(days=6, hours=23, minutes=59, seconds=59)
 
-    for k in series_map:
-        series_map[k].sort(key=lambda e: e.get('StartDate', ''))
-
-    own_series   = series_map.get(sel_key, [])
-    lesson_number = next(
-        (i + 1 for i, e in enumerate(own_series) if e.get('ID') == sel_id),
-        None,
-    )
-    if lesson_number is None:
-        return []
-
-    # win_end: day before the student's next scheduled lesson so makeups
-    # don't bleed into the following week. Fall back to 2 weeks if this
-    # is the last lesson in the series.
-    if lesson_number < len(own_series):
-        try:
-            next_lesson_dt = parse_dt(own_series[lesson_number].get('StartDate', ''))
-            win_end = next_lesson_dt - timedelta(days=1)
-        except Exception:
-            win_end = lesson_dt + timedelta(weeks=2)
-    else:
-        win_end = lesson_dt + timedelta(weeks=2)
-
+    seen    = set()
     options = []
-    for key, series in series_map.items():
-        if key == sel_key:
+    for ev in all_category_events:
+        ev_id = ev.get('ID')
+        if not ev_id or ev_id in seen:
             continue
-        if len(series) < lesson_number:
-            continue
+        seen.add(ev_id)
 
-        candidate = series[lesson_number - 1]
-        if candidate.get('ID') in student_event_ids:
+        # Skip the student's own series and sessions they're already enrolled in.
+        if series_key(ev) == sel_key:
+            continue
+        if ev_id in student_event_ids:
             continue
 
         try:
-            cand_dt = parse_dt(candidate.get('StartDate', ''))
+            ev_dt = parse_dt(ev.get('StartDate', ''))
         except Exception:
             continue
 
-        if cand_dt < win_start or cand_dt > win_end:
+        if ev_dt < win_start or ev_dt > win_end:
             continue
-        if (cand_dt.year, cand_dt.month, cand_dt.day) in BLACKOUT_DATES:
+        if (ev_dt.year, ev_dt.month, ev_dt.day) in BLACKOUT_DATES:
             continue
 
-        enrolled = candidate.get('CurrentNumberAttending', 0)
+        enrolled = ev.get('CurrentNumberAttending', 0)
         if enrolled > 5:
             continue
 
-        cat  = candidate.get('EventCategory') or {}
-        tchr = candidate.get('Teacher') or {}
+        cat  = ev.get('EventCategory') or {}
+        tchr = ev.get('Teacher') or {}
         options.append({
-            'event_id':   candidate.get('ID', ''),
-            'date_str':   fmt_pacific(candidate.get('StartDate', '')),
-            'raw_dt':     candidate.get('StartDate', ''),
-            'teacher':    tchr.get('FullName') or tchr.get('Name', ''),
-            'category':   cat.get('Name', ''),
-            'enrolled':   enrolled,
-            'lesson_num': lesson_number,
+            'event_id': ev_id,
+            'date_str': fmt_pacific(ev.get('StartDate', '')),
+            'raw_dt':   ev.get('StartDate', ''),
+            'teacher':  tchr.get('FullName') or tchr.get('Name', ''),
+            'category': cat.get('Name', ''),
+            'enrolled': enrolled,
         })
 
     options.sort(key=lambda o: o['raw_dt'])
@@ -488,17 +469,16 @@ if 'options' in st.session_state:
         st.session_state.get('lesson_select', 0)
     ].get('EventCategory') or {}).get('Name', '')
 
-    lesson_num_display = options[0]['lesson_num'] if options else '?'
     st.subheader('Available Make-Up Options')
     st.caption(
-        f'Lesson {lesson_num_display} of **{selected_cat}** — '
-        f'options within the next 2 weeks with 5 or fewer enrolled students.'
+        f'Makeup options for **{selected_cat}** — '
+        f'available sessions this instructional week with 5 or fewer enrolled.'
     )
 
     if not options:
         st.warning(
             'No make-up options found. This can mean:\n'
-            '- No other groups have reached this lesson number within the 2-week window\n'
+            '- No other groups have sessions this instructional week\n'
             '- All available slots are full (>5 students)\n'
             '- The program does not have parallel sections running'
         )
