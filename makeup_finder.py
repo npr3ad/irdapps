@@ -270,13 +270,13 @@ def fetch_family_tz(family_id: str) -> str:
 
 
 def fetch_student_future_lessons(student_id: str, cat_ids: list) -> list:
-    """Return future 4/8-week events the student is enrolled in, sorted by date."""
-    today    = datetime.now().strftime('%Y-%m-%dT00:00:00')
-    end_date = (datetime.now() + timedelta(weeks=12)).strftime('%Y-%m-%dT23:59:59')
+    """Return enrolled lessons (4 weeks back through 12 weeks ahead) sorted by date."""
+    start_date = (datetime.now() - timedelta(weeks=4)).strftime('%Y-%m-%dT00:00:00')
+    end_date   = (datetime.now() + timedelta(weeks=12)).strftime('%Y-%m-%dT23:59:59')
     r = requests.post(f'{TB_BASE}/search/calendar/events', headers=_tb_headers(), json={
         'StudentIDs':       [student_id],
         'EventCategoryIDs': cat_ids,
-        'StartDate':        today,
+        'StartDate':        start_date,
         'EndDate':          end_date,
     }, timeout=60)
     r.raise_for_status()
