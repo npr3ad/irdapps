@@ -153,7 +153,7 @@ if not _check_password():
     st.stop()
 
 st.caption('Pull TutorBird appointments for a date range: Teacher, Appointment Type, Date, Time, and # Students Scheduled. '
-           'Times are Pacific (as stored in TutorBird), not converted.')
+           'Times are Pacific.')
 
 today = date.today()
 col1, col2 = st.columns(2)
